@@ -1,84 +1,186 @@
 #pragma once
 
-#include "portaudio.h"
-#include "record_struct.h"
+#include "RtAudio.h"
+#include "scopeguard.h"
+#include "pcmaudio.h"
+#include "pcm2wav.h"
+#include <assert.h>
+#include <iostream>
+using std::cout;
+using std::endl;
+using std::cerr;
 
-class RecordABC{
+#if defined( __WINDOWS_ASIO__ ) || defined( __WINDOWS_DS__ ) || defined( __WINDOWS_WASAPI__ )
+#include <windows.h>
+#define SLEEP( milliseconds ) Sleep( (DWORD) milliseconds ) 
+#else // Unix variants
+#include <unistd.h>
+#define SLEEP( milliseconds ) usleep( (unsigned long) (milliseconds * 1000.0) )
+#endif
+
+#define TRY_CATCH_RTAUDIOERROR(x) try {x;}catch(RtAudioError& e){cout<<'\n'<<e.getMessage()<<endl;}
+
+
+template <typename T>
+int inputCallback(void */*outputBuffer*/, void* inputBuffer, unsigned int nBufferFrames, 
+	double, RtAudioStreamStatus, void* data)
+{
+	PcmData<T> *iData = (PcmData<T>*) data;
+	unsigned int frames = nBufferFrames;
+
+	if (iData->frameCounter + nBufferFrames > iData->totalFrames) {
+		frames = iData->totalFrames - iData->frameCounter;
+		iData->bufferBytes = frames * iData->channels * sizeof(T);
+	}
+
+	unsigned long offset = iData->frameCounter * iData->channels;
+	memcpy( iData->buffer+offset, inputBuffer, iData->bufferBytes );
+	iData->frameCounter += frames;
+
+	//return 2 表示录音结束
+	if (iData->frameCounter >= iData->totalFrames)
+		return 2;
+	return 0;
+}
+
+/*!
+ * \class : CRecord
+ *
+ * \brief : 录音
+ *
+ * TODO: 根据参数进行录音
+ *
+ * \note 
+ *
+ * \author hw
+ *
+ * \version 1.0
+ *
+ * \date 九月 2015
+ *
+ * Contact: 
+ *
+ */
+template <typename T>
+class CRecord {
+
 private:
-	RecordABC( const RecordABC& re ){}
-	RecordABC& operator=( const RecordABC& re ){}
+	void MemoryAlloc();
+	void InitInputParams( RtAudio::StreamParameters& params, RtAudio& adc );
+	void PrintRecordMessage();
+	void WaitForFinish( const RtAudio& adc )const;
 
-	/**
-	* @brief : 根据bits获得format
-	*/
-	PaSampleFormat GetSampleFormat();
-	virtual void MallocForData() = 0;
-protected:
-	static RecordeInfo m_info;
-	RecordData  m_data;
-	callbackPointer m_pCallback;
+private:
+	PcmData<T> m_data;
+	RecordParameters m_params;
 public:
-	RecordABC( );
-	virtual ~RecordABC();
-	void* GetRecordData()const{ return m_data.recordedSamples; }
-	unsigned long GetRecordSize()const { return m_data.totalBytes; }
-	/**
-	* @brief : 根据录音参数，进行录音
-	*/
-	int StartRecord();
+	CRecord(const RecordParameters& params);
+	~CRecord();
+
+	void Start();
+	//目前只支持float32或者int16或者int32
+	void WriteDataToWavFile()const;
+	inline void GetTotalBytes()const {return m_data.frameCounter*m_data.channels*sizeof(T);}
+	inline T* GetDataPointer()const { return m_data.buffer; }
 };
 
-class RecordFloat32 : public RecordABC{
-private:
-	virtual void MallocForData();
-	static int recordCallback(
-		const void *inputBuffer, void *outputBuffer,
-		unsigned long framesPerBuffer,
-		const PaStreamCallbackTimeInfo* timeInfo,
-		PaStreamCallbackFlags statusFlags,
-		void *userData);
-public:
-	RecordFloat32( const RecordeInfo& info );
-	~RecordFloat32();
-};
+template<typename T>
+inline CRecord<T>::CRecord(const RecordParameters & params):m_params(params)
+{
+	m_data.channels = params.nChannels;
+	m_data.buffer = nullptr;
+	m_data.bufferBytes = params.framesPerBuffer * params.nChannels*sizeof(T);
+	m_data.frameCounter = 0;
+	m_data.totalFrames = (unsigned long)params.sampleRate * params.nSeconds;
+}
 
-class RecordInt16 : public RecordABC{
-private:
-	virtual void MallocForData();
-	static int recordCallback(const void *inputBuffer, void *outputBuffer,
-		unsigned long framesPerBuffer,
-		const PaStreamCallbackTimeInfo* timeInfo,
-		PaStreamCallbackFlags statusFlags,
-		void *userData);
-public:
-	RecordInt16( const RecordeInfo& info );
-	~RecordInt16();
-};
+template<typename T>
+inline CRecord<T>::~CRecord()
+{
+	free( m_data.buffer );
+}
 
-class RecordInt8 : public RecordABC{
-private:
-	virtual void MallocForData();
-	static int recordCallback(
-		const void *inputBuffer, void *outputBuffer,
-		unsigned long framesPerBuffer,
-		const PaStreamCallbackTimeInfo* timeInfo,
-		PaStreamCallbackFlags statusFlags,
-		void *userData);
-public:
-	RecordInt8( const RecordeInfo& info );
-	~RecordInt8();
-};
+template<typename T>
+void CRecord<T>::Start()
+{
+	RtAudio adc;
+	assert( adc.getDeviceCount() >= 1 );
+	ON_SCOPE_EXIT([&]() {if (adc.isStreamOpen()) adc.closeStream(); });
+	//初始化流参数
+	RtAudio::StreamParameters iParams;
+	InitInputParams( iParams, adc );
+	//重置时间轴
+	m_data.frameCounter = 0;
+	//打开音频流，同时做安全的捕获异常处理
+	TRY_CATCH_RTAUDIOERROR(adc.openStream(NULL, &iParams, m_params.audioFormat,
+		m_params.sampleRate, &m_params.framesPerBuffer, &inputCallback<T>, (void*)&m_data) );
+	//申请内存空间来存放录音数据
+	MemoryAlloc();
+	//开始录音，同时做安全的捕获异常处理
+	TRY_CATCH_RTAUDIOERROR( adc.startStream() );
+	//打印录音信息
+	PrintRecordMessage();
+	//等待录音结束
+	WaitForFinish(adc);
+}
 
-class RecordUInt8 : public RecordABC{
-private:
-	virtual void MallocForData();
-	static int recordCallback(
-		const void *inputBuffer, void *outputBuffer,
-		unsigned long framesPerBuffer,
-		const PaStreamCallbackTimeInfo* timeInfo,
-		PaStreamCallbackFlags statusFlags,
-		void *userData);
-public:
-	RecordUInt8( const RecordeInfo& info );
-	~RecordUInt8();
-};
+template<typename T>
+void CRecord<T>::MemoryAlloc()
+{
+	unsigned long totalBytes = m_data.totalFrames * m_data.channels * sizeof(T);
+	m_data.buffer = (T*)malloc( totalBytes );
+	if (m_data.buffer == nullptr) {
+		cout << "Memory allocation error....exit!\n";
+		exit(-1);
+	}
+}
+
+template<typename T>
+inline void CRecord<T>::InitInputParams(RtAudio::StreamParameters& params, RtAudio& adc)
+{
+	params.deviceId = adc.getDefaultInputDevice();
+	params.nChannels = m_data.channels;
+	params.firstChannel = 0;
+}
+
+template<typename T>
+inline void CRecord<T>::PrintRecordMessage()
+{
+	cout << "\nRecording for " << m_params.nSeconds << " seconds. (buffer frames = " << m_params.framesPerBuffer << ")." << endl;
+	cout << "\nChannels:" << m_params.nChannels << "\nSample Rate:" << m_params.sampleRate << endl;
+}
+
+template<typename T>
+inline void CRecord<T>::WaitForFinish(const RtAudio & adc) const
+{
+	while (adc.isStreamRunning())
+	{
+		SLEEP(100);
+	}
+}
+
+template<typename T>
+void CRecord<T>::WriteDataToWavFile() const
+{
+	unsigned long totalBytes = m_data.totalFrames*m_data.channels*sizeof(T);
+	CPcm2Wav converter( m_data.buffer, totalBytes, "record.wav");
+	Pcm2WavParameter convertParams;
+	convertParams.channels = m_params.nChannels;
+	convertParams.sampleRate = m_params.sampleRate;
+	if (m_params.audioFormat == AUDIO_FLOAT32)
+	{
+		convertParams.formatTag = 3;
+		convertParams.sampleBits = 32;
+	}
+	else if (m_params.audioFormat == AUDIO_SIN32)
+	{
+		convertParams.formatTag = 1;
+		convertParams.sampleBits = 32;
+	}
+	else if (m_params.audioFormat == AUDIO_SIN16)
+	{
+		convertParams.formatTag = 1;
+		convertParams.sampleBits = 16;
+	}
+	converter.Pcm2Wav(convertParams);
+}
