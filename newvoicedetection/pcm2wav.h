@@ -3,6 +3,10 @@
 
 #include <string>
 using std::string;
+
+//wave格式有比较复杂的几种情况
+//这里，我们使用最简单的情况，能够支持播放器播放
+//具体复杂情况可以参照 http://blog.csdn.net/yueyihua/article/details/5494905
 //----------------以下定义一些地址
 
 //RIFF,资源交换标志
@@ -35,32 +39,71 @@ using std::string;
 //实际数据开始处
 #define DATA_BEGIN		0x2c
 
-struct Pcm2WavInfo{
+#define DWORD_SIZE		4
+#define WORD_SIZE		2
+
+struct Pcm2WavParameter{
 	unsigned int channels;		//声道数
 	unsigned int sampleRate;		//采样率
 	unsigned int sampleBits;		//采样的位数
 	unsigned int formatTag;		//格式标志
 									//3 为 32位float
 									//1 位 16位pcm
-	string		 inFileName;
-	string		 outFileName;
 };
 
 
 class CPcm2Wav{
 private:
+	CPcm2Wav() {}
 	CPcm2Wav( const CPcm2Wav& cp ){}
 	CPcm2Wav& operator=( const CPcm2Wav& cp ){}
-	int _Pcm2Wav( string inFile, string outFile, int channels, int sam_rate, int sam_bits, int fmt_tag );
-public:
-	CPcm2Wav();
+	
+	void Pcm2Wav_File2File();
+	void Pcm2Wav_Buffer2File();
+	void ReadFileToMemory();
+	void OpenOutputFile();
+	void CloseOutputFile() { fclose(m_pOutFile); }
+	void WriteToOutputFile();
+	unsigned long GetDataFileSize();
+	void WriteSomeDataToOutFile( const void* str, int size );
 
+	void WriteRIFFChunk();
+	void WriteRIFFID();
+	void WriteRIFFChunkSize();
+	void WriteWAVEID();
+
+	void WriteFMTChunk();
+	void WriteFMTID();
+	void WriteFMTChunkSize();
+	void WriteFormatTag();
+	void WriteChannels();
+	void WriteSampleRate();
+	void WriteDataRate();
+	void WriteBlockAlign();
+	void WriteBitsPerSample();
+	
+	void WriteDataChunk();
+	void WriteDataID();
+	void WriteDataSize();
+	void WriteAudioData();
+private:
+	Pcm2WavParameter m_parameter;
+	bool m_isFile2File;
+	FILE* m_pOutFile;
+	FILE* m_pInFile;
+	void* m_pbuffer;
+	unsigned long m_bufferSize;
+	int m_outFileIndex;
+	string m_inFileName;
+	string m_outFileName;
+public:
+	CPcm2Wav( const string& inFile, const string& outFile );
+	CPcm2Wav( float* buffer, int bufferSize, const string& outFileName );
+	~CPcm2Wav();
 	/**
 	* @brief : 根据infomation进行封装 
 	*/
-	int Pcm2Wav( const Pcm2WavInfo& info );
-
-	int Pcm2Wav( const float* buffer, unsigned long bufferSize,const Pcm2WavInfo& info );
+	int Pcm2Wav( const Pcm2WavParameter& info );
 };
 
 #endif
