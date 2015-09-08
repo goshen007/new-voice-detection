@@ -14,6 +14,20 @@ CAudioTimeSandPitchS::~CAudioTimeSandPitchS()
 
 }
 
+float* CAudioTimeSandPitchS::SetWindow(int winSize, int hop)
+{
+
+	m_hopShift = hop;
+	m_winSizeShift = winSize;
+	m_windowShift = new float[m_winSizeShift];
+	//set window as hanning
+	for (int i = 0;i < m_winSizeShift;i++) {
+		m_windowShift[i] = 0.5*(1 + cos(PI*(i - m_winSizeShift / 2.0) / (m_winSizeShift / 2.0 - 1)));
+	}
+	return 0;
+
+}
+
 float* CAudioTimeSandPitchS::WavReadFile(const char* filename)
 {
 	float* PCMOut;
@@ -324,6 +338,51 @@ float* CAudioTimeSandPitchS::PitchShifting(float* dataIn,int winSize,int hop,int
 
 }
 
+float* CAudioTimeSandPitchS::PitchShifting(int dst_freq, float* dataIn, unsigned long dataInSize, int winSize)
+{
+
+	SetWindow(winSize, 44100 / dst_freq);
+	int pin(0), pout(0), pend(dataInSize - winSize);
+	float* dataOut = new float[dataInSize];
+	memset(dataOut, 0, dataInSize*sizeof(float));
+	complex* dataFFT = new complex[winSize];
+	memset(dataFFT, 0, winSize*sizeof(float));
+	float* dataIFFT = new float[winSize];
+	memset(dataIFFT, 0, winSize*sizeof(float));
+	while (pin < pend)
+	{
+		for (int i = 0;i < winSize;i++)
+		{
+			dataFFT[i].real = dataIn[i + pin] * m_windowShift[i];
+			dataFFT[i].imag = 0;
+		}
+		m_doFFt.fft(winSize, dataFFT);
+		m_doFFt.c_abs(dataFFT, dataIFFT, winSize);
+		m_doFFt.ifft(winSize, dataIFFT);
+		float* dataTemp = new float[winSize / 2];
+		memset(dataTemp, 0, winSize / 2 * sizeof(float));
+		memcpy(dataTemp, dataIFFT, winSize / 2 * sizeof(float));
+		memcpy(dataIFFT, dataIFFT + winSize / 2, winSize / 2 * sizeof(float));
+		memcpy(dataIFFT + winSize / 2, dataTemp, winSize / 2 * sizeof(float));
+		delete[] dataTemp;
+		for (int i = 0;i < winSize;i++)
+		{
+			if (pout + i < dataInSize)
+			{
+				dataIFFT[i] = dataIFFT[i] * m_windowShift[i];
+				dataOut[pout + i] = dataOut[pout + i] + dataIFFT[i];
+			}
+		}
+		pin += m_hopShift;
+		pout += m_hopShift;
+
+	}
+	delete[] dataFFT;
+	delete[] dataIFFT;
+	return dataOut;
+
+}
+
 //用于变调的重采样
 float* CAudioTimeSandPitchS::resample(float* dataIn, double scale)
 {
@@ -375,3 +434,14 @@ float* CAudioTimeSandPitchS::TimeScalingAndPitchShifting(float freqshift, float 
 	out=resample(out, freqshift);
 	return out;
 }
+
+float* CAudioTimeSandPitchS::TimeScalingAndPitchShifting(int dst_freq, float dst_time, float* dataIn, unsigned long dataInSize, int winSize, int hopScale)
+{
+	auto dataOut1 = PitchShifting(dst_freq, dataIn, dataInSize, winSize);
+	auto dataOut2 = WavReadBuffer(dataOut1, dataInSize, 1);
+	auto dataReslut(TimeScaling(dataOut2, winSize, hopScale, dst_time));
+	return dataReslut;
+
+
+}
+

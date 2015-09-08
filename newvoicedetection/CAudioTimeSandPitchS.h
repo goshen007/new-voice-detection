@@ -28,7 +28,11 @@ private:
 	CFFT			m_FFT;
 	CWavread		m_wavread;
 	float			m_sampleRateScale;
-	unsigned long	m_resampleSize;				
+	unsigned long	m_resampleSize;		
+	int				m_winSizeShift;
+	int				m_hopShift;
+	float*			m_windowShift;
+	CFFT			m_doFFt;
 
 public:
 	CAudioTimeSandPitchS();
@@ -43,7 +47,10 @@ public:
 	float* PitchShiftingFile(float* dataIn,int winSize,int hop,int shift);
 	float  GetSampleRateScale(){return m_sampleRateScale;}
 	float* PitchShifting(float* dataIn,int winSize,int hop,int shift);
+	float* PitchShifting(int dst_freq, float* dataIn, unsigned long dataInSize, int winSize);
 	float* TimeScalingAndPitchShifting(int shift, float scale,float* dataIn,int winSize,int hop);
 	float* TimeScalingAndPitchShifting(float frequence, float scale,float* dataIn,int winSize,int hop);
+	float* TimeScalingAndPitchShifting(int dst_freq, float dst_time, float* dataIn, unsigned long dataInSize, int winSize, int hopScale);
 	float* resample(float* dataIn, double scale);
+	float* SetWindow(int winSize, int hop);
 };
