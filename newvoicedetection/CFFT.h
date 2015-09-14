@@ -24,6 +24,7 @@ public:
 	void c_div(complex a,complex b,complex *result);	//复数除法
 	void c_abs(complex f[],float out[],int size);//复数数组取模
 	void Wn_i(int n,int i,complex *Wn,char flag);//
+	void fftshift(int N,float f[]);
 public:
 	CFFT();
 	~CFFT();

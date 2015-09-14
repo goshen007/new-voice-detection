@@ -85,6 +85,47 @@ float* CWavread::ReadMonoData(wav_struct wav)
 
 }
 
+short* CWavread::ReadMonoDataShort(wav_struct wav)
+{
+
+	short *Out = new short[wav.data_size/2];
+
+	for (unsigned long i = 0; i<wav.data_size; i = i + 2)
+	{
+		//右边为大端         
+		unsigned long data_low = wav.data[i];
+		unsigned long data_high = wav.data[i + 1];
+		short short_data;
+		short data_true = data_high * 256 + data_low;
+		//printf("%d ",data_true);         
+		long data_complement = 0;
+		//取大端的最高位（符号位）         
+		int my_sign = (int)(data_high / 128);
+		//printf("%d ", my_sign);         
+		if (my_sign == 1)
+		{
+			data_complement = data_true - 65536;
+		}
+		else
+		{
+			data_complement = data_true;
+		}
+       
+	//	short_data = (short)(data_complement / (short)32768);
+		short_data = data_complement;
+		Out[i / 2] = short_data;
+	}
+
+	/*for (int i=0;i<WAV.data_size/2;i++)
+	{
+	printf("%d*%f\t",i,Out[i]);
+	}*/
+
+	delete[] wav.data;
+	return Out;
+
+}
+
 //读取双声道音频数据
 float* CWavread::ReadStereoData(wav_struct wav)
 {

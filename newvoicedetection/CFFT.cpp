@@ -1,4 +1,5 @@
 #include "CFFT.h"
+#include <memory>
 
 CFFT::CFFT(){}
 CFFT::~CFFT(){}
@@ -134,9 +135,18 @@ void CFFT::ifft(int N, float in[])
 	conjugate_complex(N, f, f);
 	for (i = 0; i < N; i++)
 	{
-		f[i].imag = (f[i].imag) / N;
-		f[i].real = (f[i].real) / N;
-		in[i] = f[i].real;
+//		f[i].imag = (f[i].imag) / N;
+		in[i] = (f[i].real) / N;
 	}
 
+}
+
+void CFFT::fftshift(int N,float f[])
+{
+	float* dataTemp = new float[N / 2];
+	memset(dataTemp, 0, N / 2 * sizeof(float));
+	memcpy(dataTemp, f, N / 2 * sizeof(float));
+	memcpy(f, f + N / 2, N / 2 * sizeof(float));
+	memcpy(f + N / 2, dataTemp, N / 2 * sizeof(float));
+	
 }
