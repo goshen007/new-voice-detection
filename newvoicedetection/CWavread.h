@@ -41,4 +41,5 @@ public:
 	float* ReadMonoData(wav_struct wav);
 	//读取双声道音频数据
 	float* ReadStereoData(wav_struct wav);
+	short* ReadMonoDataShort(wav_struct wav);
 };

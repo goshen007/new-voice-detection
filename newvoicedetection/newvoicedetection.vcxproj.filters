@@ -65,5 +65,8 @@
     <ClCompile Include="calcthreshold.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="denoisetest.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>

@@ -8,19 +8,15 @@ CVoiceDetection::CVoiceDetection()
 {
 	m_winSize = 256;
 	m_hop = 90;
-	m_ampMaxThreshold = 10;
-	m_ampMinThreshold = 2;
-	m_zcMaxThreshold = 10;
-	m_zcMinThreshold = 5;
+	m_ampThreshold = 2;
+	m_zcrThreshold = 10;
 
 	m_minSilence = 50;
 	m_minVoice = 100;
 	m_voiceCount = 0;
 	m_silenceCount = 0;
 
-	m_status=0;
-	m_start = 0;
-	m_end = 0;
+	m_voiseStatus=0;
 
 	m_frameCount = 0;
 	m_frameData = NULL;
@@ -38,17 +34,40 @@ vector<SpeechSegment> CVoiceDetection::Detection( const float* buffer, int sampl
 {
     //map<int, int> startEndMap;
     EnFrame( buffer, sampleCount, m_winSize, m_hop );
+	//计算过零率
     CalcZeroCrossRate();
+	//计算能量
     CalcAmplitude();
+	//计算能量的门限
 	CalcAmpThreshold();
-    StartEndPointDetection();
-	return FindSpeechSegment( buffer,sampleRate );
+	//计算人声语音段的开始点和结束点，结果在m_startEndMap中
+	StartEndPointDetection();
+	//返回语音的信息，包括起始终止点、语音的长度(time)
+	return GetSpeechSegmentInfo( sampleRate );
 }
+
+vector<SpeechSegment> CVoiceDetection::Detection(const short* buffer, int sampleCount, int sampleRate)
+{
+	//map<int, int> startEndMap;
+	EnFrame(buffer, sampleCount, m_winSize, m_hop);
+	//计算过零率
+	CalcZeroCrossRate();
+	//计算能量
+	CalcAmplitude();
+	//计算能量的门限
+	CalcAmpThreshold();
+	//计算人声语音段的开始点和结束点，结果在m_startEndMap中
+	StartEndPointDetection();
+	//返回语音的信息，包括起始终止点、语音的长度(time)
+	return GetSpeechSegmentInfo(sampleRate);
+}
+
 void CVoiceDetection::EnFrame( const float* dataIn, int sampleSize, int winSize, int hop )
 {
+	//窗的个数
 	m_frameCount = (sampleSize - winSize)/hop + 1;
+	//构造每个窗的数据
 	m_frameData = new float*[ m_frameCount ];
-	//auto dataOut = std::shared_ptr<float>( new float*[row] );
 	for( int i = 0; i < m_frameCount; ++i )
 	{
 		m_frameData[i] = new float[winSize];
@@ -56,9 +75,22 @@ void CVoiceDetection::EnFrame( const float* dataIn, int sampleSize, int winSize,
 			memcpy( m_frameData[i], (dataIn + i * hop), winSize*sizeof(float) );
 	}
 }
+
+void CVoiceDetection::EnFrame(const short* dataIn, int sampleSize, int winSize, int hop)
+{
+	//窗的个数
+	m_frameCount = (sampleSize - winSize) / hop + 1;
+	//构造每个窗的数据
+	m_frameData = new float*[m_frameCount];
+	for (int i = 0; i < m_frameCount; ++i)
+	{
+		m_frameData[i] = new float[winSize];
+		if (m_frameData[i] != NULL)
+			memcpy(m_frameData[i], (dataIn + i * hop), winSize*sizeof(float));
+	}
+}
 void CVoiceDetection::CalcZeroCrossRate()
 {
-	std::fstream file( "zcr",std::ios::app );
     for( int i = 0; i < m_frameCount; ++i )
 	{
 		int count = 0;
@@ -67,10 +99,8 @@ void CVoiceDetection::CalcZeroCrossRate()
 			if( m_frameData[i][j] * m_frameData[i][j + 1] < 0 && m_frameData[i][j] - m_frameData[i][j + 1] > 0.0002)
 				count++;
 		}
-		file << count << " ";
 		m_zeroCrossRate.push_back( count );
 	}
-	file.close();
 }
 void CVoiceDetection::CalcAmplitude()
 {
@@ -86,36 +116,21 @@ void CVoiceDetection::CalcAmplitude()
 }
 void CVoiceDetection::CalcAmpThreshold()
 {
-	//std::unique_ptr<IThresholdCalc> calcThreshold( new CNoiseAverageAmp );
- //   double ampMax = GetAmplitudesMax();
- //   m_ampMinThreshold = 5 * calcThreshold->GetAmplitudesMin(m_amplitude, m_zeroCrossRate);
-	//std::unique_ptr<IThresholdCalc> calcThresholdMin( new CErgodicFindTheMin );
-	//double minAmp = calcThresholdMin->GetAmplitudesMin( m_amplitude, m_zeroCrossRate );
-	// if ( m_ampMinThreshold > ampMax/8.0 )
-	//	m_ampMinThreshold = minAmp * AMP_MIN_MUL;
- //   m_ampMaxThreshold = ampMax/8.0;
 	CThreshodCalculator calc( m_amplitude, m_zeroCrossRate );
-	m_ampMinThreshold = calc.GetThreshold();
+	m_ampThreshold = calc.GetThreshold();
 }
 
-double CVoiceDetection::GetAmplitudesMax()
-{
-    double maxAmp = 0.0;
-	for( int i = 0; i < m_amplitude.size(); ++i )
-	{
-		if( m_amplitude[i] > maxAmp )
-			maxAmp = m_amplitude[i];
-	}
-	assert( maxAmp > 0.0 );
-	return maxAmp;
-}
+/*
+ *	语音端点检测
+ *  
+ */
 void CVoiceDetection::StartEndPointDetection()
 {
     int status = 0;
     int start = 0;
     int end = 0;
-    int voiceCount = 0;
-    int silenceCount = 0;
+    int voiceCount = 0;		//语音计数，大于m_minVoice则认为是语音段
+    int silenceCount = 0;	//语音间隔计数，如果大于m_minSilence，表明当前语音段结束
     for( int i = 0; i < m_frameCount; ++i )
 	{
 		switch (status)
@@ -158,7 +173,7 @@ void CVoiceDetection::StartEndPointDetection()
 					voiceCount = 0;
 				}
 				else
-					status = 3;
+					status = 3;		//当前语音段结束，并且语音段长度足够长，说明是一段人声。记录其端点
 			}
 
 			break;
@@ -172,17 +187,17 @@ void CVoiceDetection::StartEndPointDetection()
 			break;
 		}
 	}//end for
-	if( voiceCount > m_minVoice )
-		m_startEndMap.insert( pair<int,int>( m_frameCount - voiceCount,m_frameCount-1 ) );
+	//if( voiceCount > m_minVoice )
+	//	m_startEndMap.insert( pair<int,int>( m_frameCount - voiceCount,m_frameCount-1 ) );
 }
 bool CVoiceDetection::IsVoice( double amp, int zcr )
 {
-	return amp > m_ampMinThreshold;
+	return amp > m_ampThreshold;
 }
 
 bool CVoiceDetection::IsMaybeVoice( double amp, int zcr )
 {
-	return amp > m_ampMinThreshold || zcr < m_zcMaxThreshold;
+	return amp > m_ampThreshold || zcr < m_zcrThreshold;
 }
 
 vector<SpeechSegment> CVoiceDetection::FindSpeechSegment( const float* buffer, int sampleRate )
@@ -213,6 +228,18 @@ vector<SpeechSegment> CVoiceDetection::FindSpeechSegment( const float* buffer, i
 	return m_speechSegment;
 }
 
+vector<SpeechSegment> CVoiceDetection::GetSpeechSegmentInfo(int sampleRate)
+{
+	assert(sampleRate != 0);
+	for (auto it = m_startEndMap.begin(); it != m_startEndMap.end(); ++it)
+	{
+		float beat = float((it->second - it->first)*m_hop) / sampleRate;
+		SpeechSegment smg(0, it->first, it->second, beat);
+		m_speechSegment.push_back( smg );
+	}
+	return m_speechSegment;
+}
+
 ////计算平均幅度差
 vector<float> CVoiceDetection::AMDFCalc( const vector<float>& amdfData )
 {
@@ -236,7 +263,7 @@ vector<float> CVoiceDetection::AMDFCalc( const vector<float>& amdfData )
 	return amdfResult;
 }
 
-//
+//未使用
 int CVoiceDetection::VoiceFrequenceCalc( const vector<float>& amdfResult, int sampleRate )
 {
 	//获取最大平均幅度差

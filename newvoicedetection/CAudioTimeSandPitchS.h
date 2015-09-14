@@ -16,7 +16,9 @@ private:
 	CAudioTimeSandPitchS& operator = (const CAudioTimeSandPitchS& cp){}
 	complex** STFT(float* dataIn);
 	complex** PVsample(complex** dataIn);
+	float** PVsampleRobot(complex** dataIn);
 	float* ISTFT(complex** dataIn);
+	float* ISTFTRobot(float** dataIn);
 
 	unsigned long	m_PCMSize;
 	int				m_hop;
@@ -39,7 +41,9 @@ public:
 	~CAudioTimeSandPitchS();
 	float*	WavReadFile(const char* filename);
 	float*  WavReadBuffer(float* buffer,unsigned long bufferSize,int channel);
+	short* WavReadBuffer(short* buffer, unsigned long bufferSize);
 	float*	TimeScaling(float* dataIn,int winSize,int hop,float scale);
+	float*	TimeScalingRobot(float* DataIn, int winSize, int hop, float scale);
 	int		WavWrite(float* dataIn);	
 	float*	wavresample(float * DataIn,int p,int q);
 	unsigned long GetSize(){return m_timeScaleSize*sizeof(float);}
@@ -51,6 +55,10 @@ public:
 	float* TimeScalingAndPitchShifting(int shift, float scale,float* dataIn,int winSize,int hop);
 	float* TimeScalingAndPitchShifting(float frequence, float scale,float* dataIn,int winSize,int hop);
 	float* TimeScalingAndPitchShifting(int dst_freq, float dst_time, float* dataIn, unsigned long dataInSize, int winSize, int hopScale);
+	float* TimeScalingAndPitchShiftingRobot(int dst_freq, float dst_time, float* dataIn, int winSize);
+	float* TimeScalingAndPitchShiftingRobot(int dst_freq, float dst_time, short* dataIn, int winSize);
+	float* TimeScalingRobot(short* DataIn, int winSize, int hop, float scale);
+	complex** STFT(short* dataIn);
 	float* resample(float* dataIn, double scale);
 	float* SetWindow(int winSize, int hop);
 };

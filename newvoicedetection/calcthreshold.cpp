@@ -45,6 +45,6 @@ double CThreshodCalculator::GetThreshold()const
 	double maxAmp( this->GetMaxAmp() );
 	double aveAmp( this->GetAveAmp() );
 	double noiseAmp( this->GetNoiseAmp() );
-	double threshold = std::min( std::min(maxAmp/10, aveAmp/2), 5.0*noiseAmp );
+	double threshold = std::min( std::min(maxAmp/10, aveAmp/2), 10*noiseAmp );
 	return threshold;
 }
